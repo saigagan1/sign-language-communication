@@ -2,96 +2,66 @@ import tkinter as tk
 from tkinter import SOLID
 from PIL import Image, ImageTk
 import cv2
+import numpy as np
+import matplotlib.pyplot as plt
 import mediapipe as mp
+import speech_recognition as sr
+import os
+import string
 
 # Initialize the main window
 win = tk.Tk()
-win.title('Sign Language Detection')
+win.title('Sign Language Application')
 width = win.winfo_screenwidth()
 height = win.winfo_screenheight()
 win.geometry(f"{width}x{height}")
 win.configure(bg="#FFFFF7")
 
-# Declare global variables
-global cap, label1, mpDraw, mpHands, hands, upCount
+# Initialize MediaPipe Hands for gesture recognition
+mpHands = mp.solutions.hands
+hands = mpHands.Hands()
+mpDraw = mp.solutions.drawing_utils
 
+# Variables and lists
 cap = None
+upCount = tk.StringVar()
+gesture_label = tk.Label(win, textvariable=upCount, font=('Helvetica', 18, 'bold'), bd=5, bg='gray', width=50, fg='#232224', relief=tk.GROOVE)
+gesture_label.place(x=400, y=700)
 
-# Create and pack the welcome label
-welcome_label = tk.Label(
-    win,
-    text='Welcome to the Sign Language Application',
-    font=('Helvetica', 18, 'italic'),
-    bd=5,
-    bg='orange',
-    fg='white',
-    relief=SOLID,
-    width=200
-)
-welcome_label.pack(pady=15, padx=300)
+# Alphabet list for sign language
+arr = list(string.ascii_lowercase)
 
-# Create and pack the "Start Camera" button
+# Start camera for gesture detection
 def start_camera():
-    initialize_video()
+    global cap
+    cap = cv2.VideoCapture(0)
     detect_gesture()
 
-start_button = tk.Button(
-    win,
-    text="Start Camera",
-    font=('Helvetica', 16),
-    bg='blue',
-    fg='white',
-    command=start_camera
-)
-start_button.pack(pady=15)
-
-def initialize_video():
-    global cap, mpDraw, mpHands, hands, label1, upCount
-
-    # Define constants
-    w, h = 500, 400
-
-    # Release any previous video capture if it exists
+# Stop camera and release the video capture
+def stop_camera():
+    global cap
     if cap:
         cap.release()
-
-    # Create a Label widget for displaying the video feed
-    label1 = tk.Label(win, width=w, height=h, bg="#FFFFF7")
-    label1.place(x=40, y=200)
-
-    # Initialize MediaPipe Hands module
-    mpHands = mp.solutions.hands
-    hands = mpHands.Hands()
-    mpDraw = mp.solutions.drawing_utils
-
-    # Start video capture
-    cap = cv2.VideoCapture(0)
-
-    # Set up the text variable for displaying gesture recognition results
-    upCount = tk.StringVar()
-    status = tk.Label(win, textvariable=upCount, font=('Helvetica', 18, 'bold'), bd=5, bg='gray', width=50,
-                      fg='#232224', relief=tk.GROOVE)
-    status.place(x=400, y=700)
-    crr = tk.Label(win, text='Current:', font=('Helvetica', 18, 'bold'), bd=5, bg='gray', width=15, fg='#232224',
-                   relief=tk.GROOVE)
-    crr.place(x=120, y=700)
+        cap = None
+        # Clear the video feed
+        video_label.config(image='')
 
 def detect_gesture():
-    global cap, mpDraw, mpHands, hands, label1, upCount
+    global cap, mpDraw, mpHands, hands, upCount
+
+    if not cap:
+        return  # Exit if the camera is off
 
     # Capture frame from video
     ret, img = cap.read()
     if not ret:
-        print("Failed to grab frame")
         return
 
-    # Resize and convert frame to RGB
     img = cv2.resize(img, (500, 400))
     rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-    # Process frame with MediaPipe Hands
     results = hands.process(rgb)
 
+    # Gesture recognition logic
     cshow = ''
 
     if results.multi_hand_landmarks:
@@ -118,7 +88,7 @@ def detect_gesture():
                 if lm_list[4].y < lm_list[2].y and lm_list[8].y < lm_list[6].y and lm_list[12].y < lm_list[10].y and \
                         lm_list[16].y < lm_list[14].y and lm_list[20].y < lm_list[18].y and lm_list[17].x < lm_list[
                     0].x < lm_list[5].x:
-                    cshow = 'STOP ! Don\'t move.'
+                    cshow = 'STOP! Don\'t move.'
                 elif lm_list[4].y < lm_list[2].y and lm_list[8].y > lm_list[6].y and lm_list[12].y < lm_list[10].y and \
                         lm_list[16].y < lm_list[14].y and lm_list[20].y < lm_list[18].y and lm_list[17].x < lm_list[
                     0].x < lm_list[5].x:
@@ -140,18 +110,85 @@ def detect_gesture():
                         lm_list[16].x < lm_list[14].x and lm_list[20].x < lm_list[18].x:
                     cshow = 'Move Right'
 
-            # Draw landmarks and text on the image
+            # Display gesture recognition text
+            upCount.set(cshow)
+
+            # Draw landmarks on the image
             mpDraw.draw_landmarks(rgb, hand, mpHands.HAND_CONNECTIONS)
             cv2.putText(rgb, cshow, (10, 50), cv2.FONT_HERSHEY_COMPLEX, 0.75, (0, 255, 255), 2)
 
-            # Convert image for Tkinter
-            image = Image.fromarray(rgb)
-            finalImage = ImageTk.PhotoImage(image)
-            label1.configure(image=finalImage)
-            label1.image = finalImage
-
-    # Repeat detect_gesture function to create continuous video feed
+    # Update video feed for Tkinter
+    image = Image.fromarray(rgb)
+    finalImage = ImageTk.PhotoImage(image)
+    video_label.configure(image=finalImage)
+    video_label.image = finalImage
     win.after(1, detect_gesture)
 
-# Start the Tkinter main loop
+# Initialize speech recognition for audio to alphabetical sign language
+def audio_to_sign():
+    recognizer = sr.Recognizer()
+    with sr.Microphone() as source:
+        recognizer.adjust_for_ambient_noise(source)
+        try:
+            print("Listening...")
+            audio = recognizer.listen(source)
+            text = recognizer.recognize_google(audio).lower()
+            print("You said:", text)
+
+            # Show all letters in the spoken text at once
+            show_phrase(text)
+        except Exception as e:
+            print("Error:", str(e))
+
+# Close the output display window for audio output
+def close_output():
+    plt.close('all')  # Close all matplotlib windows
+
+def show_phrase(phrase):
+    # Filter out only valid letters and corresponding images
+    images = [f'letters/{char}.jpg' for char in phrase if char in arr and os.path.exists(f'letters/{char}.jpg')]
+    
+    if images:
+        fig, axes = plt.subplots(1, len(images), figsize=(len(images) * 2, 2))
+        if len(images) == 1:  # If only one image, make axes iterable
+            axes = [axes]
+
+        for ax, img_path in zip(axes, images):
+            img = Image.open(img_path)
+            ax.imshow(np.array(img))
+            ax.axis('off')  # Hide axes for cleaner look
+
+        plt.show(block=False)  # Non-blocking display
+        plt.pause(3)  # Show the images for a few seconds
+        # plt.close() is now controlled by the close_output button
+
+# Create and pack the video and control widgets
+video_label = tk.Label(win, width=500, height=400, bg="#FFFFF7")
+video_label.place(x=40, y=200)
+
+# Buttons
+start_button = tk.Button(win, text="Start Camera for Gesture Recognition", font=('Helvetica', 16), bg='blue', fg='white', command=start_camera)
+start_button.pack(pady=5)
+
+stop_button = tk.Button(win, text="Stop Camera", font=('Helvetica', 16), bg='red', fg='white', command=stop_camera)
+stop_button.pack(pady=5)
+
+audio_button = tk.Button(win, text="Audio to Alphabet Sign Language", font=('Helvetica', 16), bg='green', fg='white', command=audio_to_sign)
+audio_button.pack(pady=5)
+
+close_output_button = tk.Button(win, text="Close Output", font=('Helvetica', 16), bg='orange', fg='white', command=close_output)
+close_output_button.pack(pady=5)
+
+# Load and display the provided sign language image below the buttons
+sign_image_path = 'signlang.png'  # Ensure the image is in the same directory
+sign_image = Image.open(sign_image_path)
+sign_image = sign_image.resize((300, 150), Image.LANCZOS)
+sign_photo = ImageTk.PhotoImage(sign_image)
+
+# Center the image below the buttons
+image_x_position = (width - 300) // 2  # Center the image horizontally
+sign_image_label = tk.Label(win, image=sign_photo, bg="#FFFFF7")
+sign_image_label.place(x=image_x_position, y=250)  # Position below buttons
+
+# Start Tkinter main loop
 win.mainloop()
